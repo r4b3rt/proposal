@@ -11,7 +11,7 @@ Go 1.5 will use a toolchain written in Go (at least in part). \
 Question: how do you build Go if you need Go built already? \
 Answer: building Go 1.5 will require having Go 1.4 available.
 
-[**Update, 2023.** This plan was originally published as a Google document. For easier access, it was converted to Markdown in this repository in 2023. Later versions of Go require newer bootstrap toolchains. See [go.dev/issue/52465](https://go.dev/issue/52465) for those details.]
+[**Update, 2023.** This plan was originally published as a Google document. For easier access, it was converted to Markdown in this repository in 2023. Later versions of Go require newer bootstrap toolchains. See [go.dev/issue/54265](https://go.dev/issue/54265) for those details.]
 
 ## Background
 
