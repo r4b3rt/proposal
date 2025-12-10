@@ -9,9 +9,9 @@ January 2025
 ## Introduction
 
 This covers a design and initial implementation for a mechanism
-to free user memory eagerly to the Go runtime to be reused without
-needing to wait for the GC cycle to progress. The mechanism is implemented
-in a new runtime function, `runtime.freegc`, which is invoked
+to free user memory eagerly to the Go runtime. The freed memory can be reused
+immediately in subsequent allocations without needing to wait for the GC cycle to progress.
+The mechanism is implemented in a new runtime function, `runtime.freegc`, which is inserted
 by the compiler in cases where it can prove the memory is no longer used.
 
 A call to `runtime.freegc` records memory as dead and tracks it for
@@ -29,7 +29,7 @@ that even escaping heap memory can be immediately freed once
 it is dead in some cases, such as the intermediate memory for appends
 of a non-aliased slice in a loop.
 
-When enabled, `runtime.freegc` allows more eager reuse of user memory,
+When enabled, `runtime.freegc` allows faster reuse of user memory,
 reducing the allocation rate from the GC's perspective, and thus
 reducing the frequency of GC cycles, total GC CPU usage, and how often
 write barriers are enabled. It can also produce a more cache-friendly
@@ -58,10 +58,9 @@ the compiler and runtime.
 Today, users can implement their own free lists and achieve some of the memory reuse
 benefits described here. However, `runtime.freegc` is implemented at a low level of
 the runtime and has various advantages like being able to reuse memory across types
-more safely and easily, more directly hook into what the GC is doing, do things
-like place pointers inside the heap memory of types that do not have pointers
-(to more efficiently track reusable objects), and even change the GC shape of
-reusable objects, which is something even unsafe user code cannot do.
+more safely and easily, more directly hook into what the GC is doing, more efficiently
+track reusable objects, and even change the GC shape of reusable objects, which is
+something even unsafe user code cannot do.
 
 Updating the compiler translates to the reuse being both safer and more automated
 than hand written code using a custom free list.
@@ -128,14 +127,13 @@ shown in `slices.Collect`.  (**Update**: this is now implemented but not yet in 
 
 6. Possibly extend to freeing more than just slices. Slices are a natural
 first step, but the large majority of the work implemented is independent of whether
-the heap object represents a slice. For example, on function exit, we might be able to
-free the table memory for non-escaping maps that do not have memory
-held by iteration.
+the heap object represents a slice. For example, on function exit, we likely will be able to
+free the table memory for non-escaping maps.
 
 ## Runtime API overview
 
 There are currently four primary runtime entry-points with working implementations,
-plus some additional variations on these not listed here. There are additional
+plus some additional variations on these that are not listed here. There are additional
 details with more draft API doc towards the end of this document.
 
 `freegc` is the primary entry-point for freeing user memory. It is emitted directly
@@ -163,7 +161,9 @@ the existing `makeslice64`, but fills in a `trackedObjs` for later
 use by `freegcTracked`. The compiler is responsible for reserving stack space
 for a properly sized backing array for `trackedObj` based on how many objects
 will be tracked, which gives the runtime the space it needs to write down
-its tracking information.
+its tracking information. (An alternative not yet attempted might be to use
+the standard makeslice64 and have compiler-generated code update the tracking
+information.)
 
 ```go
 func makeslicetracked64(et *_type, len64 int64, cap64 int64, trackedObjs *[]trackedObj) unsafe.Pointer
@@ -566,9 +566,7 @@ geomean                         18.02n        18.01n       -0.05%
 
 ## runtime API
 
-This section lists the runtime APIs that are either automatically
-inserted by the compiler or can be called from a targeted set of
-locations in the standard library.
+This section lists the runtime APIs that are automatically inserted by the compiler.
 
 Note: the term "logically dead" here is distinct from the compiler's liveness
 analysis, and the runtime free and re-use implementations must be (and
@@ -592,7 +590,7 @@ single GC phase. (TODO: more precise term than "logically dead"?)
 // be used past that moment. In other words, ptr must be the
 // last and only pointer to its referent.
 //
-// The intended caller is the compiler.
+// The intended callers are the runtime and compiler-generated calls.
 //
 // ptr must point to a heap object or into the current g's stack,
 // in which case freegc is a no-op. In particular, ptr must not point
